@@ -32,7 +32,7 @@ app.get("/", (req, res) => {
     `);
 });
 // api routes
-app.use("/auth", authRoutes);
+app.use("/api/v1/auth", authRoutes);
 
 // Port configuration
 const PORT = process.env.PORT || 9000;
