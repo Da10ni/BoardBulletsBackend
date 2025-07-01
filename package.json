@@ -5,7 +5,7 @@
   "license": "ISC",
   "author": "",
   "main": "index.js",
-  "type" : "module",
+  "type": "module",
   "scripts": {
     "dev": "nodemon index.js",
     "start": "index.js"
@@ -21,6 +21,8 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.16.1",
     "multer": "^2.0.1",
+    "node-mailer": "^0.1.1",
+    "nodemailer": "^7.0.4",
     "nodemon": "^3.1.10"
   }
 }

@@ -1,24 +1,16 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { userModel } from "../models/userModel.js";
+import {
+  generateCode,
+  isValidEmail,
+  sendVerificationEmail,
+} from "../methods/methods.js";
+import { schemaForVerify } from "../models/verifyModel.js";
 
-// Helper function to validate email
-const isValidEmail = (email) => {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
-};
-
-// Register API
 const register = async (req, res) => {
   try {
-    const {
-      email,
-      password,
-      firstName,
-      lastName,
-      DOB,
-      gender = "male",
-    } = req.body;
+    const { email, password, firstName, lastName, confirmPassword } = req.body;
 
     // Validation
     if (!email || !password) {
@@ -44,14 +36,55 @@ const register = async (req, res) => {
       });
     }
 
+    if (password !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Password do not matched",
+      });
+    }
+
     // Check if user already exists
     const existingUser = await userModel.findOne({
       email: email.toLowerCase(),
     });
+
     if (existingUser) {
+      // If user exists but not verified, allow resending verification
+      if (!existingUser.isVerified) {
+        // Delete any existing verification codes for this user
+        await schemaForVerify.deleteMany({ userId: existingUser._id });
+
+        // Generate new verification code
+        const verificationCode = generateCode();
+
+        // Create new verification entry
+        const newVerification = new schemaForVerify({
+          userId: existingUser._id,
+          verificationCode,
+        });
+        await newVerification.save();
+
+
+        console.log("first ==>",existingUser.email,verificationCode,existingUser.profile.firstName)
+
+
+        // Send verification email
+        await sendVerificationEmail(
+          existingUser.email,
+          verificationCode,
+          existingUser.profile.firstName
+        );
+
+        return res.status(200).json({
+          success: true,
+          message: "Verification code resent to your email",
+          email: existingUser.email,
+        });
+      }
+
       return res.status(409).json({
         success: false,
-        message: "User with this email already exists",
+        message: "User with this email already exists and is verified",
       });
     }
 
@@ -63,42 +96,209 @@ const register = async (req, res) => {
     const newUser = new userModel({
       email: email.toLowerCase(),
       password: hashedPassword,
+      isVerified: false,
       profile: {
         firstName: firstName || "",
         lastName: lastName || "",
-        DOB: DOB || "",
-        gender,
       },
     });
 
     // Save user to database
     await newUser.save();
 
-    const tokenData = {
-      userId: newUser?._id,
-    };
+    // Generate verification code
+    const verificationCode = generateCode();
 
-    const token = jwt.sign(tokenData, process.env.JWT_SECRET, {
-      expiresIn: "1d",
+    // Create verification entry
+    const newVerification = new schemaForVerify({
+      userId: newUser._id,
+      verificationCode,
     });
+    await newVerification.save();
 
-    return res
-      .status(201)
-      .cookie("token", token, {
-        maxAge: 1 * 24 * 60 * 60 * 1000,
-        httpOnly: true,
-        sameSite: "strict",
-      })
-      .json({
-        success: true,
-        message: "User registered successfully",
+    console.log("second ==>",newUser.email,verificationCode,newUser.profile.firstName)
+
+    // Send verification email
+    try {
+      await sendVerificationEmail(email, verificationCode, firstName);
+    } catch (emailError) {
+      // If email fails, delete the user and verification entry
+      await userModel.findByIdAndDelete(newUser._id);
+      await schemaForVerify.deleteOne({ userId: newUser._id });
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to send verification email. Please try again.",
       });
+    }
+
+    // Return success response (don't send token until verified)
+    return res.status(201).json({
+      success: true,
+      message:
+        "Registration successful! Please check your email for verification code.",
+      email: newUser.email,
+      verificationRequired: true,
+    });
   } catch (error) {
     console.error("Register error:", error);
+
+    // Handle specific MongoDB errors
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "User with this email already exists",
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: "Internal server error during registration",
       error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+// Verify Email Code Controller
+const verifyEmail = async (req, res) => {
+  try {
+    const { email, verificationCode } = req.body;
+
+    // Validation
+    if (!email || !verificationCode) {
+      return res.status(400).json({
+        success: false,
+        message: "Email and verification code are required",
+      });
+    }
+
+    // Find user
+    const user = await userModel.findOne({
+      email: email.toLowerCase(),
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Check if user is already verified
+    if (user.isVerified) {
+      return res.status(400).json({
+        success: false,
+        message: "User is already verified",
+      });
+    }
+
+    // Find verification entry
+    const verification = await schemaForVerify.findOne({
+      userId: user._id,
+      verificationCode: verificationCode,
+    });
+
+    if (!verification) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid verification code or code has expired",
+      });
+    }
+
+    // Mark user as verified
+    user.isVerified = true;
+    await user.save();
+
+    // Delete verification entry after successful verification
+    await schemaForVerify.deleteOne({ _id: verification._id });
+
+    // Generate JWT token
+    const tokenData = { userId: user._id };
+    const token = jwt.sign(tokenData, process.env.JWT_SECRET, {
+      expiresIn: "1d",
+    });
+
+    // Remove password from response
+    const userResponse = {
+      _id: user._id,
+      email: user.email,
+      role: user.role,
+      isVerified: user.isVerified,
+      profile: user.profile,
+      createdAt: user.createdAt,
+    };
+
+    return res.status(200).json({
+      success: true,
+      message: "Email verified successfully",
+      user: userResponse,
+      token,
+    });
+  } catch (error) {
+    console.error("Verify email error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error during verification",
+      error: error.message || undefined,
+    });
+  }
+};
+
+// Resend Verification Code Controller
+const resendVerificationCode = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: "Email is required",
+      });
+    }
+
+    // Find user
+    const user = await userModel.findOne({
+      email: email.toLowerCase(),
+      isVerified: false,
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: "User not found or already verified",
+      });
+    }
+
+    // Delete any existing verification codes for this user
+    await schemaForVerify.deleteMany({ userId: user._id });
+
+    // Generate new verification code
+    const verificationCode = generateCode();
+
+    // Create new verification entry
+    const newVerification = new schemaForVerify({
+      userId: user._id,
+      verificationCode,
+    });
+    await newVerification.save();
+
+    // Send verification email
+    await sendVerificationEmail(
+      user.email,
+      verificationCode,
+      user.profile.firstName
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "New verification code sent to your email",
+    });
+  } catch (error) {
+    console.error("Resend verification error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to resend verification code",
+      error: error.message ||  undefined,
     });
   }
 };
@@ -142,7 +342,6 @@ const login = async (req, res) => {
       });
     }
 
-
     // Remove password from response
     const userResponse = {
       _id: user._id,
@@ -153,24 +352,24 @@ const login = async (req, res) => {
     };
 
     const tokenData = {
-        userId: user?._id,
-      };
-  
-      const token = jwt.sign(tokenData, process.env.JWT_SECRET, {
-        expiresIn: "1d",
+      userId: user?._id,
+    };
+
+    const token = jwt.sign(tokenData, process.env.JWT_SECRET, {
+      expiresIn: "1d",
+    });
+
+    return res
+      .status(201)
+      .cookie("token", token, {
+        maxAge: 1 * 24 * 60 * 60 * 1000,
+        httpOnly: true,
+        sameSite: "strict",
+      })
+      .json({
+        success: true,
+        message: "login successfully",
       });
-  
-      return res
-        .status(201)
-        .cookie("token", token, {
-          maxAge: 1 * 24 * 60 * 60 * 1000,
-          httpOnly: true,
-          sameSite: "strict",
-        })
-        .json({
-          success: true,
-          message: "login successfully",
-        });
   } catch (error) {
     console.error("Login error:", error);
     res.status(500).json({
@@ -252,4 +451,4 @@ const getProfile = async (req, res) => {
 //   }
 // };
 
-export { register, login, getProfile };
+export { register, login, getProfile, resendVerificationCode, verifyEmail };

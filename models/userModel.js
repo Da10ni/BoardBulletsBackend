@@ -16,6 +16,10 @@ const userSchema = new mongoose.Schema({
     required: true,
     default: "student",
   },
+  isVerified: {
+    type: Boolean,
+    default: false,
+  },
   profile: {
     profilePic: {
       type: String,

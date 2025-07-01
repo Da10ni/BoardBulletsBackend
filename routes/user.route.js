@@ -1,12 +1,14 @@
 import express from "express";
 import { authenticateToken } from "../middleware/authMiddleware.js";
-import { getProfile, login, register } from "../controllers/user.controller.js";
+import { getProfile, login, register, resendVerificationCode, verifyEmail } from "../controllers/user.controller.js";
 
 const router = express.Router();
 
 // Public routes (no authentication required)
 router.post("/register", register);
 router.post("/login", login);
+router.post("/verify-email",verifyEmail)
+router.post("/resend-verification",resendVerificationCode)
 
 // Protected routes (authentication required)
 router.get("/profile/:id", authenticateToken, getProfile);
