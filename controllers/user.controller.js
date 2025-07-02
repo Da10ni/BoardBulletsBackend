@@ -7,6 +7,8 @@ import {
   sendVerificationEmail,
 } from "../methods/methods.js";
 import { schemaForVerify } from "../models/verifyModel.js";
+import getDataUri from "../utils/datauri.js";
+import cloudinary from "../utils/cloudinary.js";
 
 const register = async (req, res) => {
   try {
@@ -64,9 +66,12 @@ const register = async (req, res) => {
         });
         await newVerification.save();
 
-
-        console.log("first ==>",existingUser.email,verificationCode,existingUser.profile.firstName)
-
+        console.log(
+          "first ==>",
+          existingUser.email,
+          verificationCode,
+          existingUser.profile.firstName
+        );
 
         // Send verification email
         await sendVerificationEmail(
@@ -116,7 +121,12 @@ const register = async (req, res) => {
     });
     await newVerification.save();
 
-    console.log("second ==>",newUser.email,verificationCode,newUser.profile.firstName)
+    console.log(
+      "second ==>",
+      newUser.email,
+      verificationCode,
+      newUser.profile.firstName
+    );
 
     // Send verification email
     try {
@@ -298,7 +308,7 @@ const resendVerificationCode = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to resend verification code",
-      error: error.message ||  undefined,
+      error: error.message || undefined,
     });
   }
 };
@@ -359,17 +369,11 @@ const login = async (req, res) => {
       expiresIn: "1d",
     });
 
-    return res
-      .status(201)
-      .cookie("token", token, {
-        maxAge: 1 * 24 * 60 * 60 * 1000,
-        httpOnly: true,
-        sameSite: "strict",
-      })
-      .json({
-        success: true,
-        message: "login successfully",
-      });
+    return res.status(201).json({
+      success: true,
+      message: "login successfully",
+      token,
+    });
   } catch (error) {
     console.error("Login error:", error);
     res.status(500).json({
@@ -405,50 +409,93 @@ const getProfile = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Internal server error",
+      error: error.message,
+    });
+  }
+};
+
+// update profile api
+const updateProfile = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { firstName, lastName, DOB, gender } = req.body;
+    const profilePic = req.file; 
+
+    console.log(profilePic)
+
+    if (!firstName || !lastName || !DOB || !gender) {
+      return res.status(400).json({
+        success: false,
+        message: "Please fill in all required fields",
+      });
+    }
+
+    let updateData = {
+      profile: {
+        firstName,
+        lastName,
+        DOB,
+        gender,
+      },
+    };
+
+    // If profile pic is uploaded
+    if (profilePic) {
+      const getUrl = await getDataUri(profilePic);
+      const cloudResponse = await cloudinary.uploader.upload(getUrl.content);
+      updateData.profile.profilePic = cloudResponse?.secure_url || "";
+    }
+
+    const updatedUser = await userModel
+      .findByIdAndUpdate(userId, { $set: updateData }, { new: true })
+      .select("-password");
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Profile updated successfully",
+      data: {
+        user: updatedUser,
+      },
+    });
+  } catch (error) {
+    console.error("Update profile error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+// Simple Logout API
+const logout = async (req, res) => {
+  try {
+    return res.status(200).json({
+      success: true,
+      message: "Logout successful",
+    });
+  } catch (error) {
+    console.error("Logout error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error during logout",
       error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 };
 
-// // Update Profile API (Bonus)
-// const updateProfile = async (req, res) => {
-//   try {
-//     const userId = req.user.userId; // From auth middleware
-//     const { firstName, lastName, DOB, gender, profilePic } = req.body;
-
-//     const updateData = {};
-//     if (firstName !== undefined) updateData["profile.firstName"] = firstName;
-//     if (lastName !== undefined) updateData["profile.lastName"] = lastName;
-//     if (DOB !== undefined) updateData["profile.DOB"] = DOB;
-//     if (gender !== undefined) updateData["profile.gender"] = gender;
-//     if (profilePic !== undefined) updateData["profile.profilePic"] = profilePic;
-
-//     const updatedUser = await userModel
-//       .findByIdAndUpdate(userId, { $set: updateData }, { new: true })
-//       .select("-password");
-
-//     if (!updatedUser) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "User not found",
-//       });
-//     }
-
-//     res.status(200).json({
-//       success: true,
-//       message: "Profile updated successfully",
-//       data: {
-//         user: updatedUser,
-//       },
-//     });
-//   } catch (error) {
-//     console.error("Update profile error:", error);
-//     res.status(500).json({
-//       success: false,
-//       message: "Internal server error",
-//       error: process.env.NODE_ENV === "development" ? error.message : undefined,
-//     });
-//   }
-// };
-
-export { register, login, getProfile, resendVerificationCode, verifyEmail };
+export {
+  register,
+  login,
+  getProfile,
+  resendVerificationCode,
+  verifyEmail,
+  logout,
+  updateProfile,
+};

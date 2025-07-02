@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import cors from "cors";
 import connectDB from "./utils/db.js";
 import authRoutes from "./routes/user.route.js";
+import quizRoute from "./routes/quiz.route.js";
 import cookieParser from "cookie-parser";
 
 // Load environment variables
@@ -31,7 +32,7 @@ app.use(cookieParser());
 
 // ✅ Fixed - No template literals
 const PORT = process.env.PORT || 8080;
-const HOST = process.env.HOST || '0.0.0.0';
+const HOST = process.env.HOST || "0.0.0.0";
 
 app.get("/", (req, res) => {
   res.json({
@@ -43,16 +44,17 @@ app.get("/", (req, res) => {
 });
 
 app.get("/health", (req, res) => {
-  res.json({ 
-    status: "OK", 
+  res.json({
+    status: "OK",
     server: "running",
     port: PORT,
-    host: HOST
+    host: HOST,
   });
 });
 
 // api routes
 app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/quiz", quizRoute);
 
 // Start server
 app.listen(PORT, HOST, () => {
