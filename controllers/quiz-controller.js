@@ -179,11 +179,17 @@ const getSmartFallbackWithRandomization = (question) => {
   };
 };
 
+// Add question
 const addQuestion = async (req, res) => {
+  
   try {
+    console.log("✅ Received Request:", JSON.stringify(req.body, null, 2));
     const { userId, question } = req.body;
 
-    // Validation
+    console.log("📥 Received request with:");
+    console.log("   ➤ userId:", userId);
+    console.log("   ➤ question:", question);
+
     if (!userId || !question) {
       return res.status(400).json({
         success: false,
@@ -191,10 +197,18 @@ const addQuestion = async (req, res) => {
       });
     }
 
-    console.log("\n=== PROCESSING NEW QUESTION ===");
-    console.log("Question:", question);
+    console.log("\n🚀 Generating options with Gemini...");
+    const ai = await generateOptionsWithGemini(question);
+    console.log("🤖 Gemini response:", ai);
 
-    const aiResponse = await generateOptionsWithGemini(question);
+    // Defensive check
+    if (!ai || !Array.isArray(ai.options) || ai.correctAnswer === undefined) {
+      return res.status(500).json({
+        success: false,
+        message: "Invalid response from Gemini",
+        error: ai,
+      });
+    }
 
     console.log("Final AI Response (After Backend Randomization):", aiResponse);
     console.log("=== END PROCESSING ===\n");
@@ -209,7 +223,9 @@ const addQuestion = async (req, res) => {
       subCategory: null,
     });
 
-    const savedQuestion = await newQuestion.save();
+    const saved = await newQuestion.save();
+
+    console.log("✅ Question saved to DB:", saved._id);
 
     // ✅ Enhanced response with randomization info
     res.status(201).json({
@@ -231,22 +247,24 @@ const addQuestion = async (req, res) => {
         },
       },
     });
+
   } catch (error) {
-    console.error("Error adding question:", error);
+    console.error("❌ Error in addQuestion:", error.message);
     res.status(500).json({
       success: false,
-      message: "Server error",
+      message: "Failed to generate options. Gemini may have returned invalid format.",
       error: error.message,
     });
   }
 };
 
+
+// Add category
 const addCategory = async (req, res) => {
   try {
     const { questionId } = req.params;
     const { category, subCategory } = req.body;
 
-    // Validation
     if (!category || !subCategory) {
       return res.status(400).json({
         success: false,
@@ -254,13 +272,9 @@ const addCategory = async (req, res) => {
       });
     }
 
-    // Update question with categories
     const updatedQuestion = await Quiz.findByIdAndUpdate(
       questionId,
-      {
-        category: category,
-        subCategory: subCategory,
-      },
+      { category, subCategory },
       { new: true }
     );
 
@@ -283,8 +297,9 @@ const addCategory = async (req, res) => {
         correctAnswer: updatedQuestion.correctAnswer, // Random index
       },
     });
+
   } catch (error) {
-    console.error("Error updating category:", error);
+    console.error("❌ Error updating category:", error.message);
     res.status(500).json({
       success: false,
       message: "Server error",
