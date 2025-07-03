@@ -20,7 +20,7 @@ const quizSchema = new mongoose.Schema({
     type: Number,
     required: true,
     min: 0,
-    max: 2, // 0, 1, 2 (3 options)
+    max: 3, // 0, 1, 2 (3 options)
   },
   category: {
     type: String,

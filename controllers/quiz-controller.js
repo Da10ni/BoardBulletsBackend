@@ -1,7 +1,40 @@
-// NEW WORKING GEMINI CONTROLLER - WITH OPTION LENGTH
+// FIXED BACKEND - WITH FORCE RANDOMIZATION
 
 import { Quiz } from "../models/quizModel.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+
+// ✅ BACKEND FORCE RANDOMIZATION FUNCTION
+const forceRandomShuffle = (originalOptions, originalCorrectIndex) => {
+  // Generate truly random index (0, 1, 2, 3)
+  const newRandomIndex = Math.floor(Math.random() * 4);
+
+  console.log(`🎲 Original correct index: ${originalCorrectIndex}`);
+  console.log(`🎲 New random index: ${newRandomIndex}`);
+
+  // Get the correct answer text
+  const correctAnswerText = originalOptions[originalCorrectIndex];
+
+  // Create new shuffled array
+  const shuffledOptions = [...originalOptions];
+
+  // If new index is different, swap the options
+  if (newRandomIndex !== originalCorrectIndex) {
+    // Swap correct answer to new position
+    shuffledOptions[newRandomIndex] = correctAnswerText;
+    shuffledOptions[originalCorrectIndex] = originalOptions[newRandomIndex];
+  }
+
+  console.log("📋 Original options:", originalOptions);
+  console.log("🔀 Shuffled options:", shuffledOptions);
+  console.log(
+    `✅ Correct answer '${correctAnswerText}' moved to index: ${newRandomIndex}`
+  );
+
+  return {
+    shuffledOptions,
+    newCorrectIndex: newRandomIndex,
+  };
+};
 
 const generateOptionsWithGemini = async (question) => {
   try {
@@ -11,16 +44,25 @@ const generateOptionsWithGemini = async (question) => {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-    // Simple prompt - easy to parse
-    const prompt = `Generate 4 options for this question. Reply ONLY with the format below, nothing else:
+    // ✅ SIMPLIFIED PROMPT: AI ko sirf correct answer first position pe dene ko bolo
+    const prompt = `
+Generate 4 multiple choice options for this question: "${question}"
 
-Question: ${question}
+Instructions:
+1. Put the CORRECT answer as the FIRST option
+2. Put 3 WRONG answers as the remaining options
+3. Return format: CorrectAnswer|WrongOption1|WrongOption2|WrongOption3
 
-Reply format: option1|option2|option3|option4|0
+Example:
+Question: "Capital of France?"
+Response: "Paris|London|Berlin|Madrid"
 
-Example: Paris|London|Berlin|Madrid|0
+Question: "2+2=?"
+Response: "4|5|6|3"
 
-Your reply:`;
+Question: "${question}"
+Remember: First option should always be correct!
+`;
 
     const result = await model.generateContent(prompt);
     const response = await result.response;
@@ -28,8 +70,7 @@ Your reply:`;
 
     console.log("Gemini Response:", text);
 
-    // Parse simple format: option1|option2|option3|option4|correctIndex
-    // Clean the response first
+    // Parse simple format: correctAnswer|wrong1|wrong2|wrong3
     let cleanText = text;
 
     // Remove common prefixes/suffixes that Gemini adds
@@ -44,7 +85,7 @@ Your reply:`;
     let targetLine = "";
 
     for (let line of lines) {
-      if (line.includes("|") && line.split("|").length >= 5) {
+      if (line.includes("|") && line.split("|").length >= 4) {
         targetLine = line.trim();
         break;
       }
@@ -53,147 +94,88 @@ Your reply:`;
     console.log("Cleaned line:", targetLine);
 
     const parts = targetLine.split("|");
-    if (parts.length >= 5) {
-      const options = parts.slice(0, 4).map((opt) => opt.trim());
-      const correctAnswerIndex = parseInt(parts[4].trim()) || 0;
+    if (parts.length >= 4) {
+      const originalOptions = parts.slice(0, 4).map((opt) => opt.trim());
+      const originalCorrectIndex = 0; // AI always puts correct answer at index 0
 
-      // Make sure correctAnswer is valid (0-3)
-      const validCorrectAnswerIndex = Math.max(0, Math.min(3, correctAnswerIndex));
+      console.log("✅ AI Response parsed successfully");
+      console.log("Original options from AI:", originalOptions);
 
-      // Get the correct option text and its length
-      const correctOptionText = options[validCorrectAnswerIndex];
-      const correctAnswerLength = correctOptionText.length;
-
-      console.log("Correct option:", correctOptionText);
-      console.log("Option length:", correctAnswerLength);
+      // ✅ FORCE BACKEND RANDOMIZATION
+      const { shuffledOptions, newCorrectIndex } = forceRandomShuffle(
+        originalOptions,
+        originalCorrectIndex
+      );
 
       return {
-        options: options,
-        correctAnswer: correctAnswerLength, // ✅ Length of correct answer
-        correctAnswerIndex: validCorrectAnswerIndex, // Original index for reference
+        options: shuffledOptions, // ✅ Backend shuffled options
+        correctAnswerIndex: newCorrectIndex, // ✅ Random index (0-3)
+        correctAnswerText: shuffledOptions[newCorrectIndex], // For reference
+        debugInfo: {
+          aiOriginalOptions: originalOptions,
+          aiOriginalIndex: originalCorrectIndex,
+          backendForcedIndex: newCorrectIndex,
+          randomizationApplied: true,
+        },
       };
     }
 
-    // If parsing fails, return smart fallback
-    console.log("Parsing failed, using smart fallback");
-    return getSmartFallback(question);
+    // If parsing fails, return smart fallback with randomization
+    console.log("Parsing failed, using smart fallback with randomization");
+    return getSmartFallbackWithRandomization(question);
   } catch (error) {
     console.error("Gemini Error:", error.message);
-    return getSmartFallback(question);
+    return getSmartFallbackWithRandomization(question);
   }
 };
 
-// Smart fallback based on question patterns
-const getSmartFallback = (question) => {
+// ✅ SMART FALLBACK WITH RANDOMIZATION
+const getSmartFallbackWithRandomization = (question) => {
   const q = question.toLowerCase();
+  let fallbackOptions = [];
 
   // Geography questions
   if (q.includes("capital")) {
     if (q.includes("pakistan")) {
-      const options = ["Islamabad", "Karachi", "Lahore", "Peshawar"];
-      return {
-        options: options,
-        correctAnswer: options[0].length, // "Islamabad" = 9 characters
-        correctAnswerIndex: 0,
-      };
-    }
-    if (q.includes("india")) {
-      const options = ["New Delhi", "Mumbai", "Kolkata", "Chennai"];
-      return {
-        options: options,
-        correctAnswer: options[0].length, // "New Delhi" = 9 characters
-        correctAnswerIndex: 0,
-      };
-    }
-    if (q.includes("england") || q.includes("uk")) {
-      const options = ["London", "Manchester", "Birmingham", "Liverpool"];
-      return {
-        options: options,
-        correctAnswer: options[0].length, // "London" = 6 characters
-        correctAnswerIndex: 0,
-      };
-    }
-    if (q.includes("france")) {
-      const options = ["Paris", "Lyon", "Marseille", "Nice"];
-      return {
-        options: options,
-        correctAnswer: options[0].length, // "Paris" = 5 characters
-        correctAnswerIndex: 0,
-      };
-    }
-    if (q.includes("germany")) {
-      const options = ["Berlin", "Munich", "Hamburg", "Frankfurt"];
-      return {
-        options: options,
-        correctAnswer: options[0].length, // "Berlin" = 6 characters
-        correctAnswerIndex: 0,
-      };
-    }
-    if (q.includes("japan")) {
-      const options = ["Tokyo", "Osaka", "Kyoto", "Yokohama"];
-      return {
-        options: options,
-        correctAnswer: options[0].length, // "Tokyo" = 5 characters
-        correctAnswerIndex: 0,
-      };
+      fallbackOptions = ["Islamabad", "Karachi", "Lahore", "Peshawar"];
+    } else if (q.includes("india")) {
+      fallbackOptions = ["New Delhi", "Mumbai", "Kolkata", "Chennai"];
+    } else if (q.includes("france")) {
+      fallbackOptions = ["Paris", "Lyon", "Marseille", "Nice"];
+    } else if (q.includes("japan")) {
+      fallbackOptions = ["Tokyo", "Osaka", "Kyoto", "Yokohama"];
+    } else {
+      fallbackOptions = ["Capital A", "Capital B", "Capital C", "Capital D"];
     }
   }
-
   // Science questions
-  if (q.includes("largest planet")) {
-    const options = ["Jupiter", "Saturn", "Earth", "Mars"];
-    return {
-      options: options,
-      correctAnswer: options[0].length, // "Jupiter" = 7 characters
-      correctAnswerIndex: 0,
-    };
+  else if (q.includes("largest planet")) {
+    fallbackOptions = ["Jupiter", "Saturn", "Earth", "Mars"];
   }
-  if (q.includes("smallest planet")) {
-    const options = ["Mercury", "Venus", "Mars", "Earth"];
-    return {
-      options: options,
-      correctAnswer: options[0].length, // "Mercury" = 7 characters
-      correctAnswerIndex: 0,
-    };
-  }
-  if (q.includes("speed of light")) {
-    const options = [
-      "299,792,458 m/s",
-      "150,000,000 m/s",
-      "300,000,000 m/s",
-      "250,000,000 m/s",
-    ];
-    return {
-      options: options,
-      correctAnswer: options[0].length, // "299,792,458 m/s" = 15 characters
-      correctAnswerIndex: 0,
-    };
-  }
-
   // Math questions
-  if (q.includes("2+2") || q.includes("2 + 2")) {
-    const options = ["4", "3", "5", "6"];
-    return {
-      options: options,
-      correctAnswer: options[0].length, // "4" = 1 character
-      correctAnswerIndex: 0,
-    };
+  else if (q.includes("2+2") || q.includes("2 + 2")) {
+    fallbackOptions = ["4", "3", "5", "6"];
   }
-  if (q.includes("5*5") || q.includes("5 * 5")) {
-    const options = ["25", "20", "30", "15"];
-    return {
-      options: options,
-      correctAnswer: options[0].length, // "25" = 2 characters
-      correctAnswerIndex: 0,
-    };
+  // Default fallback
+  else {
+    fallbackOptions = ["Answer A", "Answer B", "Answer C", "Answer D"];
   }
 
-  // Default fallback
-  const options = ["Answer A", "Answer B", "Answer C", "Answer D"];
+  // ✅ Apply randomization to fallback
+  const { shuffledOptions, newCorrectIndex } = forceRandomShuffle(
+    fallbackOptions,
+    0
+  );
+
   return {
-    options: options,
-    correctAnswer: options[0].length, // "Answer A" = 8 characters
-    correctAnswerIndex: 0,
+    options: shuffledOptions,
+    correctAnswerIndex: newCorrectIndex,
+    correctAnswerText: shuffledOptions[newCorrectIndex],
+    debugInfo: {
+      fallbackUsed: true,
+      originalFallback: fallbackOptions,
+      randomizedIndex: newCorrectIndex,
+    },
   };
 };
 
@@ -214,30 +196,39 @@ const addQuestion = async (req, res) => {
 
     const aiResponse = await generateOptionsWithGemini(question);
 
-    console.log("Final AI Response:", aiResponse);
+    console.log("Final AI Response (After Backend Randomization):", aiResponse);
     console.log("=== END PROCESSING ===\n");
 
-    // Create new question
+    // ✅ Save with backend-randomized correct answer index
     const newQuestion = new Quiz({
       userId: userId,
       question: question,
-      options: aiResponse.options,
-      correctAnswer: aiResponse.correctAnswer, // ✅ Now contains length of correct option
+      options: aiResponse.options, // ✅ Backend shuffled options
+      correctAnswer: aiResponse.correctAnswerIndex, // ✅ Random index (0-3)
       category: null,
       subCategory: null,
     });
 
     const savedQuestion = await newQuestion.save();
 
+    // ✅ Enhanced response with randomization info
     res.status(201).json({
       success: true,
-      message: "Question added successfully with AI-generated options",
+      message: "Question added with BACKEND FORCE RANDOMIZATION",
       data: {
         questionId: savedQuestion._id,
         question: savedQuestion.question,
         options: savedQuestion.options,
-        correctAnswer: savedQuestion.correctAnswer, // Length of correct answer
-        correctAnswerIndex: aiResponse.correctAnswerIndex, // Original index for reference
+        correctAnswerIndex: savedQuestion.correctAnswer, // Random index
+        correctAnswerText: aiResponse.correctAnswerText,
+        totalOptions: aiResponse.options.length,
+        // ✅ Debug information
+        randomizationInfo: {
+          method: "Backend Force Randomization",
+          aiOriginalIndex: aiResponse.debugInfo?.aiOriginalIndex || 0,
+          finalRandomIndex: savedQuestion.correctAnswer,
+          randomizationSuccess: true,
+        },
       },
     });
   } catch (error) {
@@ -289,7 +280,7 @@ const addCategory = async (req, res) => {
         category: updatedQuestion.category,
         subCategory: updatedQuestion.subCategory,
         options: updatedQuestion.options,
-        correctAnswer: updatedQuestion.correctAnswer, // Length of correct answer
+        correctAnswer: updatedQuestion.correctAnswer, // Random index
       },
     });
   } catch (error) {
@@ -301,5 +292,30 @@ const addCategory = async (req, res) => {
     });
   }
 };
+
+// ✅ TESTING FUNCTION: Test randomization
+const testRandomDistribution = () => {
+  console.log("\n🧪 TESTING RANDOMIZATION DISTRIBUTION:");
+  const testResults = [];
+
+  for (let i = 0; i < 20; i++) {
+    const testOptions = ["Correct", "Wrong1", "Wrong2", "Wrong3"];
+    const { newCorrectIndex } = forceRandomShuffle(testOptions, 0);
+    testResults.push(newCorrectIndex);
+  }
+
+  console.log("Test results:", testResults);
+
+  // Count distribution
+  const distribution = { 0: 0, 1: 0, 2: 0, 3: 0 };
+  testResults.forEach((index) => distribution[index]++);
+
+  console.log("Distribution count:", distribution);
+  console.log("Expected: roughly equal distribution");
+  console.log("✅ Randomization test completed\n");
+};
+
+// Uncomment to test randomization:
+// testRandomDistribution();
 
 export { addQuestion, addCategory };
