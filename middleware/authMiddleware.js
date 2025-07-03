@@ -1,13 +1,28 @@
+// ============ BACKEND MIDDLEWARE UPDATE ============
+
 import jwt from "jsonwebtoken";
 
-// Auth middleware to verify JWT token from cookies
+// Auth middleware to verify JWT token from Authorization header
 const authenticateToken = async (req, res, next) => {
   try {
-    // Get token from cookies
-    const token = req.cookies.token;
+    // Get token from Authorization header
+    const authHeader = req.headers.authorization;
+    
+    console.log("Authorization header:", authHeader);
 
-    console.log("Cookies received:", req.cookies);
-    console.log("Token from cookies:", token);
+    if (!authHeader) {
+      return res.status(401).json({
+        success: false,
+        message: "Authorization header required",
+      });
+    }
+
+    // Extract token from "Bearer <token>" format
+    const token = authHeader.startsWith('Bearer ') 
+      ? authHeader.slice(7) 
+      : authHeader;
+
+    console.log("Token from header:", token);
 
     if (!token) {
       return res.status(401).json({

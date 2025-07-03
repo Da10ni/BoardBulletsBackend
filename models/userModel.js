@@ -16,6 +16,10 @@ const userSchema = new mongoose.Schema({
     required: true,
     default: "student",
   },
+  isVerified: {
+    type: Boolean,
+    default: false,
+  },
   profile: {
     profilePic: {
       type: String,
@@ -34,6 +38,18 @@ const userSchema = new mongoose.Schema({
       enum: ["male", "female"],
       required: true,
       default: "male",
+    },
+    institute: {
+      type: String,
+    },
+    residence: {
+      type: String,
+    },
+    DOG: {
+      type: String,
+    },
+    speciality: {
+      type: String,
     },
   },
 });
