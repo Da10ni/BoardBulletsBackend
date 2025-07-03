@@ -179,17 +179,11 @@ const getSmartFallbackWithRandomization = (question) => {
   };
 };
 
-// Add question
 const addQuestion = async (req, res) => {
-  
   try {
-    console.log("✅ Received Request:", JSON.stringify(req.body, null, 2));
     const { userId, question } = req.body;
 
-    console.log("📥 Received request with:");
-    console.log("   ➤ userId:", userId);
-    console.log("   ➤ question:", question);
-
+    // Validation
     if (!userId || !question) {
       return res.status(400).json({
         success: false,
@@ -197,35 +191,49 @@ const addQuestion = async (req, res) => {
       });
     }
 
-    console.log("\n🚀 Generating options with Gemini...");
-    const ai = await generateOptionsWithGemini(question);
-    console.log("🤖 Gemini response:", ai);
+    console.log("\n=== PROCESSING NEW QUESTION ===");
+    console.log("Question:", question);
 
-    // Defensive check
-    if (!ai || !Array.isArray(ai.options) || ai.correctAnswer === undefined) {
-      return res.status(500).json({
-        success: false,
-        message: "Invalid response from Gemini",
-        error: ai,
-      });
-    }
+    const aiResponse = await generateOptionsWithGemini(question);
 
     console.log("Final AI Response (After Backend Randomization):", aiResponse);
     console.log("=== END PROCESSING ===\n");
 
-    // ✅ Save with backend-randomized correct answer index
+    // ✅ SCHEMA VALIDATION: Ensure correct answer index is within schema limits
+    const validateCorrectAnswerIndex = (index) => {
+      // Check your schema's max value - if it's 2, then only allow 0,1,2
+      const SCHEMA_MAX_VALUE = 3; // ✅ Update this based on your schema
+
+      if (index > SCHEMA_MAX_VALUE) {
+        console.log(
+          `⚠️ Index ${index} exceeds schema max ${SCHEMA_MAX_VALUE}, adjusting...`
+        );
+        return Math.min(index, SCHEMA_MAX_VALUE);
+      }
+
+      if (index < 0) {
+        console.log(`⚠️ Index ${index} is negative, adjusting to 0...`);
+        return 0;
+      }
+
+      return index;
+    };
+
+    // ✅ Save with validated correct answer index
+    const validatedCorrectIndex = validateCorrectAnswerIndex(
+      aiResponse.correctAnswerIndex
+    );
+
     const newQuestion = new Quiz({
       userId: userId,
       question: question,
-      options: aiResponse.options, // ✅ Backend shuffled options
-      correctAnswer: aiResponse.correctAnswerIndex, // ✅ Random index (0-3)
+      options: aiResponse.options,
+      correctAnswer: validatedCorrectIndex, // ✅ Schema-safe index
       category: null,
       subCategory: null,
     });
 
-    const saved = await newQuestion.save();
-
-    console.log("✅ Question saved to DB:", saved._id);
+    const savedQuestion = await newQuestion.save();
 
     // ✅ Enhanced response with randomization info
     res.status(201).json({
@@ -247,24 +255,22 @@ const addQuestion = async (req, res) => {
         },
       },
     });
-
   } catch (error) {
-    console.error("❌ Error in addQuestion:", error.message);
+    console.error("Error adding question:", error);
     res.status(500).json({
       success: false,
-      message: "Failed to generate options. Gemini may have returned invalid format.",
+      message: "Server error",
       error: error.message,
     });
   }
 };
 
-
-// Add category
 const addCategory = async (req, res) => {
   try {
     const { questionId } = req.params;
     const { category, subCategory } = req.body;
 
+    // Validation
     if (!category || !subCategory) {
       return res.status(400).json({
         success: false,
@@ -272,9 +278,13 @@ const addCategory = async (req, res) => {
       });
     }
 
+    // Update question with categories
     const updatedQuestion = await Quiz.findByIdAndUpdate(
       questionId,
-      { category, subCategory },
+      {
+        category: category,
+        subCategory: subCategory,
+      },
       { new: true }
     );
 
@@ -297,9 +307,8 @@ const addCategory = async (req, res) => {
         correctAnswer: updatedQuestion.correctAnswer, // Random index
       },
     });
-
   } catch (error) {
-    console.error("❌ Error updating category:", error.message);
+    console.error("Error updating category:", error);
     res.status(500).json({
       success: false,
       message: "Server error",
