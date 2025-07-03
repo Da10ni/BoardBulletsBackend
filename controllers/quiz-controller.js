@@ -339,7 +339,31 @@ const testRandomDistribution = () => {
   console.log("✅ Randomization test completed\n");
 };
 
+const getQuestion = async (req, res) => {
+  const userId = req.user?.userId;
+  try {
+    const otherUserQuestion = await Quiz.find({
+      $nor: [
+        {
+          userId: userId,
+        },
+      ],
+    });
+
+    return res.status(200).json({
+      question: otherUserQuestion,
+      success: true,
+    });
+    
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: error?.message,
+    });
+  }
+};
+
 // Uncomment to test randomization:
 // testRandomDistribution();
 
-export { addQuestion, addCategory };
+export { addQuestion, addCategory, getQuestion };
