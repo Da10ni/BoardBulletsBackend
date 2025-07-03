@@ -39,6 +39,18 @@ const userSchema = new mongoose.Schema({
       required: true,
       default: "male",
     },
+    institute: {
+      type: String,
+    },
+    residence: {
+      type: String,
+    },
+    DOG: {
+      type: String,
+    },
+    speciality: {
+      type: String,
+    },
   },
 });
 

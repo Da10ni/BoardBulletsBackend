@@ -414,15 +414,25 @@ const getProfile = async (req, res) => {
   }
 };
 
-// update profile api
 const updateProfile = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const { firstName, lastName, DOB, gender } = req.body;
-    const profilePic = req.file; 
+    const {
+      firstName,
+      lastName,
+      DOB,
+      gender,
+      institute,
+      residence,
+      DOG,
+      speciality,
+    } = req.body;
 
-    console.log(profilePic)
+    const profilePic = req.file;
 
+    console.log(firstName,lastName,DOB,gender,institute,residence,DOG,speciality,profilePic)
+
+    // Required fields validation
     if (!firstName || !lastName || !DOB || !gender) {
       return res.status(400).json({
         success: false,
@@ -430,32 +440,52 @@ const updateProfile = async (req, res) => {
       });
     }
 
-    let updateData = {
-      profile: {
-        firstName,
-        lastName,
-        DOB,
-        gender,
-      },
-    };
-
-    // If profile pic is uploaded
-    if (profilePic) {
-      const getUrl = await getDataUri(profilePic);
-      const cloudResponse = await cloudinary.uploader.upload(getUrl.content);
-      updateData.profile.profilePic = cloudResponse?.secure_url || "";
-    }
-
-    const updatedUser = await userModel
-      .findByIdAndUpdate(userId, { $set: updateData }, { new: true })
-      .select("-password");
-
-    if (!updatedUser) {
+    // Get current user to preserve existing profile data
+    const currentUser = await userModel.findById(userId);
+    
+    if (!currentUser) {
       return res.status(404).json({
         success: false,
         message: "User not found",
       });
     }
+
+    // Merge with existing profile data
+    const updatedProfile = {
+      ...currentUser.profile, // Preserve existing fields
+      firstName,
+      lastName,
+      DOB,
+      gender,
+    };
+
+    // Add optional fields if provided
+    if (institute) updatedProfile.institute = institute;
+    if (residence) updatedProfile.residence = residence;
+    if (DOG) updatedProfile.DOG = DOG;
+    if (speciality) updatedProfile.speciality = speciality;
+
+    // Handle profile picture
+    if (profilePic) {
+      try {
+        const getUrl = await getDataUri(profilePic);
+        const cloudResponse = await cloudinary.uploader.upload(getUrl.content);
+        updatedProfile.profilePic = cloudResponse?.secure_url || "";
+      } catch (uploadError) {
+        console.error("Profile picture upload failed:", uploadError);
+      }
+    }
+
+    // Update user with merged profile
+    const updatedUser = await userModel
+      .findByIdAndUpdate(
+        userId,
+        { $set: { profile: updatedProfile } },
+        { new: true, runValidators: true }
+      )
+      .select("-password");
+
+    console.log("✅ Profile updated successfully");
 
     res.status(200).json({
       success: true,
@@ -473,6 +503,7 @@ const updateProfile = async (req, res) => {
     });
   }
 };
+
 // Simple Logout API
 const logout = async (req, res) => {
   try {
